@@ -14,22 +14,33 @@ def count_layer_num(input_list):
     num_result = {key: len(result[key]) for key in result.keys()}
     return result, num_result
 
-output_path = Path('/mnt/kaichen/radar_onellm/modality_specific/outputs')
-output_path = Path('/mnt/kaichen/radar_onellm/modality_specific/demo_outputs')
+output_path = Path('/data/kaichen/radar_onellm/modality_specific/outputs/')
+# output_path = Path('/data/kaichen/radar_onellm/modality_specific/demo_outputs')
 
 def get_outputs(file_str=None):
+    # import pdb
+    # pdb.set_trace()
     for file in output_path.rglob('*.csv'):
-        contain_flag = False
+        # print(file)
+        contain_flag = True
         if file_str is not None:
             for Str in file_str:
-                if Str in str(file):
-                    contain_flag = True
+                if Str not in str(file):
+                    contain_flag = False
                     break
             if not contain_flag:
                 continue
         
-        df = pd.read_csv(file)
+        try:
+            df = pd.read_csv(file, on_bad_lines='warn')
+        except Exception as e:
+            print(file)
+            print(e)
+            print("wrong")
+            exit()
+            
         print(len(df), str(file.stem).split('--'))
+        print(file)
         ret = {"correct": [], "bleu": [], "sbert_similarity": [], "cider": [], "wrr": []}
         for index, row in df.iterrows():
             for key in ret.keys():
@@ -71,4 +82,51 @@ def check_masks(file_str=None):
 
 # get_outputs(["layer_uniform"])
 # get_outputs(["LA_MU"])
-get_outputs()
+# get_outputs(["/vocal_sound/"])
+
+# "prompt": {6: "prompt"},
+    # "special_text_as_one": {2: "special_text", 3: "image", 4: "video", 5: "audio"},
+    # "special_text_separate"
+
+get_outputs(["/coco_caption/"])
+# get_outputs()
+
+
+
+
+
+
+# import pickle
+
+# path1 = "/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_audio/mmlu/ISM/ISM_start0_end5000.npy"
+# path2 = "/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_audio/mmlu/ISM/ISM_start5001_end10001.npy"
+# path3 = "/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_audio/mmlu/ISM/ISM_start10001_end14042.npy"
+
+# with open(path1, "rb") as f:
+#     h1 = pickle.load(f)
+    
+# with open(path2, "rb") as f:
+#     h2 = pickle.load(f)
+
+# with open(path3, "rb") as f:
+#     h3 = pickle.load(f)
+# import pdb
+# pdb.set_trace()
+
+# with open("/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_audio/mmlu/ISM/ISM.npy", "wb") as f:
+#     pickle.dump((h1[0]+h2[0]+h3[0], h1[1]+h2[1]+h3[1]), f)
+# # a = 1
+
+# from pathlib import Path
+# vl_path = Path("/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_vl/sum_ISM")
+# audio_path = Path("/data/kaichen/radar_onellm/modality_specific/outputs/qwen2_audio/sum_ISM")
+# import os
+
+# for file in audio_path.rglob('*'):
+#     if file.is_dir():
+#         sh_str = f"python main.py --mllm qwen2_audio --mode 3 --dataset mmlu --sum_ISM_path {file.name}"
+#         os.system(sh_str)
+#         # exit()
+#         # print(file.name)
+    
+    

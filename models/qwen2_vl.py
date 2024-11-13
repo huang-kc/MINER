@@ -13,7 +13,7 @@ class Qwen2_VL:
     """
     def __init__(self, args):
         self.args = args
-        model_path = "/mnt/kaichen/data/Qwen2-VL-7B-Instruct"
+        model_path = "/data/kaichen/data/Qwen2-VL-7B-Instruct"
 
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             model_path, torch_dtype="auto", device_map="auto"

@@ -26,8 +26,8 @@ from .crop import crop
 class MSVD(Dataset):
     def __init__(self) -> None:
         super().__init__()
-        self.datas = json.load(open('/mnt/kaichen/data/MSVD/test_qa.json'))
-        map_ids =[x.strip().split(' ') for x in open('/mnt/kaichen/data/MSVD/youtube_mapping.txt').readlines()]
+        self.datas = json.load(open('/data/kaichen/data/MSVD/test_qa.json'))
+        map_ids =[x.strip().split(' ') for x in open('/data/kaichen/data/MSVD/youtube_mapping.txt').readlines()]
         self.id_to_video_ids = {x[1]:x[0] for x in map_ids}
 
     def __len__(self):
@@ -37,7 +37,7 @@ class MSVD(Dataset):
         data = self.datas[index]
         video_id = 'vid'+str(data['video_id'])
         video_name = self.id_to_video_ids[video_id] + '.avi'
-        image_path = os.path.join("/mnt/kaichen/data/MSVD/YouTubeClips", video_name)
+        image_path = os.path.join("/data/kaichen/data/MSVD/YouTubeClips", video_name)
         question_id = data['id']
         question = data['question'] + '\nAnswer the question using a single word or phrase.'
         answer = data['answer']
@@ -48,7 +48,7 @@ class TextEvaluation:
     evaluation between predicted sentence and ground truth sentences
     """
     def __init__(self):
-        self.sbert_model = SentenceTransformer('/mnt/kaichen/data/paraphrase-MiniLM-L6-v2')
+        self.sbert_model = SentenceTransformer('/data/kaichen/data/paraphrase-MiniLM-L6-v2')
 
     def calculate_bleu(self, input_sentence, reference_sentences):
         """
@@ -156,10 +156,10 @@ def karpathy_coco_test():
     """
     generate karpathy coco testset, 5000 images with multiple captions in total
     """
-    coco = COCO('/mnt/kaichen/data/coco/annotations_trainval2014/captions_val2014.json')
-    root_img_path = '/mnt/kaichen/data/coco/val2014/'
+    coco = COCO('/data/kaichen/data/coco/annotations_trainval2014/captions_val2014.json')
+    root_img_path = '/data/kaichen/data/coco/val2014/'
     old_imgIds = coco.getImgIds()
-    with open('/mnt/kaichen/data/coco/karparthy_split2014/coco_test.txt', 'r', encoding='utf-8') as f:
+    with open('/data/kaichen/data/coco/karparthy_split2014/coco_test.txt', 'r', encoding='utf-8') as f:
         kar_test = [line.strip() for line in f]
 
     imgIds = []
@@ -386,7 +386,12 @@ def create_activation_hook(layer_index, args):
                 all_positions += neurons
                 
             layer_positions = [t[1] for t in all_positions if t[0] == layer_index]
-            output[..., layer_positions] = output.min() if args.deactivation_val == -1 else args.deactivation_val            
+
+            if args.complementary_mask:
+                com_positions = list(set(range(args.hidden_size)) - set(layer_positions))
+                output[..., com_positions] = output.min() if args.deactivation_val == -1 else args.deactivation_val            
+            else:
+                output[..., layer_positions] = output.min() if args.deactivation_val == -1 else args.deactivation_val            
         return output
     return activation_hook
 
@@ -492,7 +497,7 @@ def check_values_in_lists(values, lists):
         return violations
     
 def load_libri():
-    LIBRISPEECH_DIR = '/mnt/kaichen/data/LibriSpeech/test-clean'
+    LIBRISPEECH_DIR = '/data/kaichen/data/LibriSpeech/test-clean'
     # 存储音频和文本的列表
     audio_data = []
     transcriptions = []

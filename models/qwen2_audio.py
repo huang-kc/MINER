@@ -12,7 +12,7 @@ class Qwen2_Audio:
     """
     def __init__(self, args):
         self.args = args
-        model_path = "/mnt/kaichen/data/Qwen2-Audio-7B-Instruct"
+        model_path = "/data/kaichen/data/Qwen2-Audio-7B-Instruct"
         self.processor = AutoProcessor.from_pretrained(model_path)
         self.model = Qwen2AudioForConditionalGeneration.from_pretrained(model_path, device_map="auto")
         self.args.device = self.model.device

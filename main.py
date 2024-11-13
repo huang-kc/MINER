@@ -89,6 +89,7 @@ def main():
     parser.add_argument('--modality_split_type', default="special_text_separate", type=str, choices=list(ALL_MODILITY_SPLIT_TYPES.keys()))
     parser.add_argument('--mask_modalities', type=str, nargs='+', default=["all_modalities"], help="choose modalities want to mask, should be subset of MLLM_MODALITIES[args.dataset]")
     parser.add_argument('--deactivation_val', type=float, default=0, help="output value of a deactivated neuron, -1 means output.min()")
+    parser.add_argument('--complementary_mask', type=int, default=0)
     
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -117,24 +118,23 @@ def main():
     args.mllm_dataset_path = f"{args.mllm_path}/{args.dataset}"
     args.mllm_dataset_ISM_path = f"{args.mllm_dataset_path}/ISM"
     
-    # create folder and initialize csv file
+    # create folder and initialize csv file 
     if args.mode in [1, 3]:
         base_folder_path = args.mllm_dataset_path if args.mode == 1 else f"{args.mllm_dataset_path}/mask_csv"
-        args.csv_name = "origin" if args.mode == 1 else f"{args.sum_ISM_path}--{args.modality_split_type}--{args.select_ratio}--{'_'.join(map(str, args.importance_metric_weights))}--{args.select_strategy}--{'_'.join(args.mask_modalities)}--{args.deactivation_val}"
+        args.csv_name = "origin" if args.mode == 1 else f"{args.sum_ISM_path}--{args.modality_split_type}--{args.select_ratio}--{'_'.join(map(str, args.importance_metric_weights))}--{args.select_strategy}--{'_'.join(args.mask_modalities)}--{args.deactivation_val}--com{args.complementary_mask}"
         args.csv_path = f"{base_folder_path}/{args.csv_name}_{args.sample_str}.csv"
 
         if not os.path.exists(base_folder_path):
             os.makedirs(base_folder_path)
             uf.initialize_csv(f'/{args.csv_name}.csv', args)
             
-        elif args.mode == 3 or not os.path.exists(args.csv_path):
+        elif not os.path.exists(args.csv_path):
             uf.initialize_csv(f'/{args.csv_name}.csv', args)        
-            
-        else: # check whether need to resume
+        
+        else: # csv file exist, check whether need to resume
             df = pd.read_csv(args.csv_path)
-            if df['index'].iloc[-1] != args.sample_num - 1:
-                args.sample_num_start_from = df['index'].iloc[-1] + 1
-                args.mmlu_resume_args = (df["dataset name"].iloc[-1], df["sub-index"].iloc[-1])
+            if len(df) != args.sample_num:
+                args.sample_start_ind = len(df)
                 uf.initialize_csv(f'/{args.csv_name}.csv', args)
             else:
                 print("Condition met, exiting the program...")
@@ -228,8 +228,13 @@ def main():
             sum_ISM_path = f"{args.mllm_path}/sum_ISM/{temp_sum_ISM_path}"
             masks_path = f"{sum_ISM_path}/masks.npy"
             if os.path.exists(masks_path): # update incrementally
-                with open(masks_path, "rb") as f:
-                    mask_dict = pickle.load(f)
+                try:
+                    with open(masks_path, "rb") as f:
+                        mask_dict = pickle.load(f)
+                except Exception as e:
+                    print(e)
+                    print(masks_path)
+                    sys.exit()
             else:
                 mask_dict = {}
             
@@ -288,6 +293,10 @@ def main():
             importance_metric_weights=args.importance_metric_weights,
             select_strategy=args.select_strategy,
         )        
+        # with open(f"/data/kaichen/radar_onellm/modality_specific/mask_args/{args.mllm}/{args.sum_ISM_path}.npy", "wb") as f:
+        #     pickle.dump(args, f)
+        # sys.exit()
+    
     
     evaluator = uf.TextEvaluation()
 
@@ -323,7 +332,7 @@ def main():
             print(model.infer(data))
 
     elif args.dataset == 'text_vqa':
-        text_vqa_path = "/mnt/kaichen/data/TextVQA"
+        text_vqa_path = "/data/kaichen/data/TextVQA"
         with open(f"{text_vqa_path}/val/TextVQA_0.5.1_val.json", "r", encoding='utf-8') as f:
             text_vqa = json.load(f)['data']
 
@@ -363,16 +372,16 @@ def main():
                 uf.handle_output(args, csv_line)
     
     elif args.dataset == 'mmlu':
-        subjects = sorted(f[:-9] for f in os.listdir('/mnt/kaichen/data/mmlu_data/test') if f.endswith('_test.csv'))
+        subjects = sorted(f[:-9] for f in os.listdir('/data/kaichen/data/mmlu_data/test') if f.endswith('_test.csv'))
         current_subject = None
         current_subject_count = 0
         choices = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
-        mmlu_data = pd.read_parquet("/mnt/kaichen/data/mmlu_data/mmlu-test-all.parquet", engine='pyarrow')
+        mmlu_data = pd.read_parquet("/data/kaichen/data/mmlu_data/mmlu-test-all.parquet", engine='pyarrow')
 
         dev_test_dict = {}
         for subject in subjects:
-            dev_df = pd.read_csv(f"/mnt/kaichen/data/mmlu_data/dev/{subject}_dev.csv", header=None)[:5]
-            test_df = pd.read_csv(f"/mnt/kaichen/data/mmlu_data/test/{subject}_test.csv", header=None)
+            dev_df = pd.read_csv(f"/data/kaichen/data/mmlu_data/dev/{subject}_dev.csv", header=None)[:5]
+            test_df = pd.read_csv(f"/data/kaichen/data/mmlu_data/test/{subject}_test.csv", header=None)
             dev_test_dict[subject] = {'dev': dev_df, 'test': test_df}
 
         for index, case in mmlu_data.iterrows():
@@ -396,8 +405,9 @@ def main():
 
                 pred = model.infer({'text': prompt})
                 label = choices[case['answer']]
+                cor = False if len(pred) == 0 else pred[0] == label
                 csv_line = {"index": index, "dataset name": subject, "sub-index": current_subject_count, "text": prompt,
-                            "answer": pred, "label": label, "correct": (pred[0] == label)}
+                            "answer": pred, "label": label, "correct": cor}
                 uf.handle_output(args, csv_line)
     
     elif args.dataset=="msvd_qa":
@@ -446,9 +456,9 @@ def main():
                  Please analyze the audio sample and provide the corresponding category name.
                  """
         
-        json_path = "/mnt/kaichen/data/vocal_sound_release_16k/datafiles/all.json"
+        json_path = "/data/kaichen/data/vocal_sound_release_16k/datafiles/all.json"
         old_path_str = "/data/sls/scratch/yuangong/vocalsound2/data/vs_processed/data_16k/"
-        new_path_str = "/mnt/kaichen/data/vocal_sound_release_16k/audio_16k/"
+        new_path_str = "/data/kaichen/data/vocal_sound_release_16k/audio_16k/"
 
         with open(json_path, 'r') as f:
             file_lst = json.load(f)['data']
