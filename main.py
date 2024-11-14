@@ -16,52 +16,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 with open('config.yaml', 'r') as f:
     cfg = yaml.safe_load(f)
 
-# ALL_MODALITIES = ["text", "special", "special_text", "image", "video", "audio", "prompt"]
-# ALL_MODILITY_SPLIT_TYPES = { # store modality and index
-#     "prompt": {6: "prompt"},
-#     "special_text_as_one": {2: "special_text", 3: "image", 4: "video", 5: "audio"},
-#     "special_text_separate": {0: "text", 1: "special", 3: "image", 4: "video", 5: "audio"},
-# }
-# MLLM_MODALITIES = { # subset of ALL_MODALITIES
-#     'qwen2_vl': {
-#         'text_vqa': ["text", "special", "special_text", "image", "prompt"],
-#         'coco_caption': ["text", "special", "special_text", "image", "prompt"],
-#         'mmlu': ["text", "special", "prompt"],
-#         'msvd_qa': ["text", "special", "special_text", "video", "prompt"],
-#     },
-#     'qwen2_audio': {
-#         'mmlu': ["text", "special", "prompt"],
-#         'libri': ["text", "special", "special_text", "audio", "prompt"],
-#         'vocal_sound': ["text", "special", "special_text", "audio", "prompt"]
-#     }
-# }
-# ALL_SELECT_STRATEGIES = ["uniform", "adaptive", "LA_MU", "LU_MA", "random"]
-# ALL_DATASETS = ["test", "text_vqa", "coco_caption", "mmlu", "msvd_qa", "libri", "vocal_sound"]
-# ALL_SELECT_RATIO = [0.001, 0.005, 0.01, 0.015, 0.02, 0.05, 0.1]
-# ALL_IMPORTANCE_METRIC_TYPES = ['prob', 'mean', 'max', 'attn_k', 'attn_q']
-# ALL_SAVE_SAMPLE_NUMS = [10, 100, 500, 1000, 2500, 5000, 10000]
-# ALL_SAMPLE_NUMS = {
-#     'test': 1,
-#     'text_vqa': 5000,
-#     'coco_caption': 5000,
-#     'mmlu': 14042,
-#     'msvd_qa': 13157,
-#     'libri': 2620,
-#     'vocal_sound': 20977,
-# }
-# ALL_IMPORTANCE_METRIC_WEIGHTS = [
-#     [1,0,0,0,0], # prob
-#     [0,1,0,0,0], # mean
-#     [0,0,1,0,0], # max
-#     [0,0,0,1,0], # attn_k
-#     [0,0,0,0,1], # attn_q
-#     [0,0.5,0.5,0,0],
-#     [0,0,0,0.5,0.5],
-#     [0,0.25,0.25,0.5,0],
-#     [0,0.25,0.25,0,0.5],
-#     [0.2,0.2,0.2,0.2,0.2],
-# ]
-
 def main():
     """
     main function
@@ -105,10 +59,6 @@ def main():
     uf.set_seed(2024)
     args.sample_num = cfg["ALL_SAMPLE_NUMS"].get(args.dataset, args.sample_num) if args.sample_num == -1 else args.sample_num
     args.sample_num_start_from = 0
-    
-    # args.all_save_sample_nums = ALL_SAVE_SAMPLE_NUMS
-    # args.all_modalities = ALL_MODALITIES
-    # args.all_importance_metric_types = ALL_IMPORTANCE_METRIC_TYPES
     
     # range(args.sample_start_ind, sargs.ample_end_ind)，左闭右开
     if args.sample_start_ind + args.sample_num < cfg["ALL_SAMPLE_NUMS"][args.dataset]:

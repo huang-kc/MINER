@@ -152,4 +152,3 @@ def crop_prompt(prompt: str):
 def crop(s):
     prompt = crop_prompt(s)
     return prompt
-

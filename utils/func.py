@@ -3,129 +3,17 @@ import random
 import os
 import csv
 import torch
-import pickle
-import re
 import sys
-import json
 import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn.functional as F
-from pathlib import Path
 from itertools import combinations
-from pycocotools.coco import COCO
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from sentence_transformers import SentenceTransformer, util
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from torch.utils.data import Dataset, DataLoader
-
-from .crop import crop
 
 with open('config.yaml', 'r') as f:
     cfg = yaml.safe_load(f)
-
-class MSVD(Dataset):
-    def __init__(self) -> None:
-        super().__init__()
-        self.datas = json.load(open('/data/kaichen/data/MSVD/test_qa.json'))
-        map_ids =[x.strip().split(' ') for x in open('/data/kaichen/data/MSVD/youtube_mapping.txt').readlines()]
-        self.id_to_video_ids = {x[1]:x[0] for x in map_ids}
-
-    def __len__(self):
-        return len(self.datas)
-
-    def __getitem__(self, index):
-        data = self.datas[index]
-        video_id = 'vid'+str(data['video_id'])
-        video_name = self.id_to_video_ids[video_id] + '.avi'
-        image_path = os.path.join("/data/kaichen/data/MSVD/YouTubeClips", video_name)
-        question_id = data['id']
-        question = data['question'] + '\nAnswer the question using a single word or phrase.'
-        answer = data['answer']
-        return image_path, question, question_id, answer
-
-class TextEvaluation:
-    """
-    evaluation between predicted sentence and ground truth sentences
-    """
-    def __init__(self):
-        self.sbert_model = SentenceTransformer('/data/kaichen/data/paraphrase-MiniLM-L6-v2')
-
-    def calculate_bleu(self, input_sentence, reference_sentences):
-        """
-        calculate BLEU score
-        """
-        input_tokens = input_sentence.split()
-        reference_tokens_list = [ref.split() for ref in reference_sentences]
-        smoothing_function = SmoothingFunction().method1
-
-        bleu_scores = [
-            sentence_bleu([ref], input_tokens, smoothing_function=smoothing_function) 
-            for ref in reference_tokens_list
-        ]
-        result = {
-            'max': max(bleu_scores),
-            'min': min(bleu_scores),
-            'mean': np.mean(bleu_scores),
-            'scores': bleu_scores
-        }
-        return result
-
-    def calculate_sbert_similarity(self, input_sentence, reference_sentences):
-        """
-        compute Sentence-BERT similarity
-        """
-        input_embedding = self.sbert_model.encode(input_sentence, convert_to_tensor=True)
-        reference_embeddings = self.sbert_model.encode(reference_sentences, convert_to_tensor=True)
-        cosine_scores = util.cos_sim(input_embedding, reference_embeddings).cpu().numpy().flatten().tolist()
-        result = {
-            'max': max(cosine_scores),
-            'min': min(cosine_scores),
-            'mean': np.mean(cosine_scores),
-            'scores': cosine_scores
-        }
-        return result
-
-    def calculate_tfidf(self, captions):
-        """
-        compute TF-IDF
-        """
-        vectorizer = TfidfVectorizer()
-        tfidf_matrix = vectorizer.fit_transform(captions)
-        return tfidf_matrix, vectorizer
-
-    def calculate_cider(self, input_sentence, reference_sentences):
-        """
-        compute score of CIDEr
-        """
-        references = reference_sentences.copy()
-        references.append(input_sentence)
-
-        tfidf_matrix, _ = self.calculate_tfidf(references)
-
-        sim_matrix = cosine_similarity(tfidf_matrix)
-        cider_scores = sim_matrix[-1, :-1].tolist()
-        result = {
-            'max': max(cider_scores),
-            'min': min(cider_scores),
-            'mean': np.mean(cider_scores),
-            'scores': cider_scores
-        }
-        return result
-
-    def evaluate(self, input_sentence, reference_sentences):
-        """
-        compute all metrics
-        """
-        results = {
-            'bleu': self.calculate_bleu(input_sentence, reference_sentences),
-            'sbert_similarity': self.calculate_sbert_similarity(input_sentence, reference_sentences),
-            'cider': self.calculate_cider(input_sentence, reference_sentences)
-        }
-        return results
 
 def split_mask_prefix(tasks, file_name):
     """
@@ -156,33 +44,6 @@ def is_cp_suffix(file_path):
     name, _ = os.path.splitext(filename)
     return name.endswith('_cp')
 
-def karpathy_coco_test():
-    """
-    generate karpathy coco testset, 5000 images with multiple captions in total
-    """
-    coco = COCO('/data/kaichen/data/coco/annotations_trainval2014/captions_val2014.json')
-    root_img_path = '/data/kaichen/data/coco/val2014/'
-    old_imgIds = coco.getImgIds()
-    with open('/data/kaichen/data/coco/karparthy_split2014/coco_test.txt', 'r', encoding='utf-8') as f:
-        kar_test = [line.strip() for line in f]
-
-    imgIds = []
-    for img_id in old_imgIds:
-        filename = coco.loadImgs(img_id)[0]['file_name']
-        if filename in kar_test:
-            img_path = root_img_path + filename
-            imgIds.append((img_id, img_path))
-
-    ground_truths = {img_id: {'img': img_path, 'anns': []} for (img_id, img_path) in imgIds}
-
-    for img_id in imgIds:
-        img_id = img_id[0]
-        annIds = coco.getAnnIds(imgIds=img_id)
-        anns = coco.loadAnns(annIds)
-        for ann in anns:
-            ground_truths[img_id]['anns'].append(ann['caption'])
-    return ground_truths
-
 def set_seed(seed):
     """
     set seeds
@@ -195,16 +56,6 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
-def check_acc(response, ans):
-    """
-    Check if one of the answers appears in response
-    """
-    out = response.lower()
-    for item in ans:
-        if item.lower() in out:
-            return True
-    return False
 
 def min_max_normalize(tensor):
     """
@@ -452,41 +303,6 @@ def handle_output(args, csv_line):
         for key, value in csv_line.items():
             print(f'{key}: {value}')
         print("")
-
-def format_subject(subject):
-    """
-    format subject
-    """
-    l = subject.split("_")
-    s = ""
-    for entry in l:
-        s += " " + entry
-    return s
-
-def format_example(df, idx, include_answer=True):
-    """
-    format example
-    """
-    choices = ["A", "B", "C", "D"]
-    prompt = df.iloc[idx, 0]
-    k = df.shape[1] - 2
-    for j in range(k):
-        prompt += f"\n{choices[j]}. {df.iloc[idx, j+1]}"
-    prompt += "\nAnswer:"
-    if include_answer:
-        prompt += f" {df.iloc[idx, k + 1]}\n\n"
-    return prompt
-
-def gen_prompt(train_df, subject, k=-1):
-    """
-    generate prompt
-    """
-    prompt = f"The following are multiple choice questions (with answers) about {format_subject(subject)}.\n\n"
-    if k == -1:
-        k = train_df.shape[0]
-    for i in range(k):
-        prompt += format_example(train_df, i)
-    return prompt
         
 def check_values_in_lists(values, lists):
     violations = []
@@ -499,94 +315,3 @@ def check_values_in_lists(values, lists):
         return True
     else:
         return violations
-    
-def load_libri():
-    LIBRISPEECH_DIR = '/data/kaichen/data/LibriSpeech/test-clean'
-    # 存储音频和文本的列表
-    audio_data = []
-    transcriptions = []
-
-    # 遍历 test-clean 文件夹中的每个说话人子文件夹
-    for speaker_id in os.listdir(LIBRISPEECH_DIR):
-        speaker_dir = os.path.join(LIBRISPEECH_DIR, speaker_id)
-        if os.path.isdir(speaker_dir):
-            # 遍历说话人文件夹中的每个章节文件夹
-            for chapter_id in os.listdir(speaker_dir):
-                chapter_dir = os.path.join(speaker_dir, chapter_id)
-                if os.path.isdir(chapter_dir):
-                    # 读取该章节中的转录文本文件
-                    transcription_file = os.path.join(chapter_dir, f'{speaker_id}-{chapter_id}.trans.txt')
-                    if os.path.exists(transcription_file):
-                        with open(transcription_file, 'r') as f:
-                            lines = f.readlines()
-                            # 遍历每个音频片段和转录文本
-                            for line in lines:
-                                # 每行格式：音频文件名（无扩展名） + 对应转录文本
-                                parts = line.strip().split(' ', 1)
-                                if len(parts) == 2:
-                                    audio_filename, transcription = parts
-                                    audio_filepath = os.path.join(chapter_dir, f'{audio_filename}.flac')
-                                    # 读取音频数据
-                                    # waveform, sample_rate = torchaudio.load(audio_filepath)
-                                    # # 将音频数据和转录文本存入列表
-                                    # audio_data.append((waveform, sample_rate))
-                                    audio_data.append(audio_filepath)
-                                    transcriptions.append(transcription)
-    return audio_data, transcriptions
-
-def remove_prefix(hyp, ref):
-    """
-    尝试从假设文本 (hypothesis) 中去除不必要的前缀或后缀，专注于最匹配的部分。
-    """
-    # 将文本都转为小写
-    ref = ref.lower().strip()
-    hyp = hyp.lower().strip()
-
-    # 找到假设文本中参考文本的位置，并提取出相应的子字符串
-    if ref in hyp:
-        return ref
-    else:
-        # 如果找不到完全匹配的参考文本，返回原假设文本
-        return hyp
-
-def wer(ref, hyp):
-    """
-    计算忽略大小写并去除不相关前缀后的 Word Error Rate (WER)
-    
-    参数:
-    ref -- 参考文本 (ground truth)
-    hyp -- 预测文本 (hypothesis)
-    
-    返回:
-    wer_score -- WER 分数
-    """
-    # 去除假设文本中可能存在的无关前缀
-    hyp = remove_prefix(hyp, ref)
-
-    # 将文本都转为小写，并拆分为单词列表
-    ref_words = ref.lower().split()
-    hyp_words = hyp.lower().split()
-
-    # 初始化编辑距离矩阵
-    d = np.zeros((len(ref_words) + 1, len(hyp_words) + 1), dtype=np.uint8)
-
-    # 初始化边界条件
-    for i in range(len(ref_words) + 1):
-        d[i][0] = i
-    for j in range(len(hyp_words) + 1):
-        d[0][j] = j
-
-    # 动态规划计算最小编辑距离
-    for i in range(1, len(ref_words) + 1):
-        for j in range(1, len(hyp_words) + 1):
-            if ref_words[i - 1] == hyp_words[j - 1]:
-                d[i][j] = d[i - 1][j - 1]  # 如果相等，保留上一步的值
-            else:
-                substitution = d[i - 1][j - 1] + 1
-                insertion = d[i][j - 1] + 1
-                deletion = d[i - 1][j] + 1
-                d[i][j] = min(substitution, insertion, deletion)
-
-    # WER 是编辑距离与参考词数的比率
-    wer_score = d[len(ref_words)][len(hyp_words)] / len(ref_words)
-    return wer_score
