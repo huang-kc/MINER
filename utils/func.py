@@ -7,6 +7,7 @@ import pickle
 import re
 import sys
 import json
+import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,6 +23,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from torch.utils.data import Dataset, DataLoader
 
 from .crop import crop
+
+with open('config.yaml', 'r') as f:
+    cfg = yaml.safe_load(f)
 
 class MSVD(Dataset):
     def __init__(self) -> None:
@@ -249,7 +253,7 @@ def save_ISM_with_token_mask_in_one_layer(old_tensor, modality_info, args):
     importance_dict['attn_q'] = min_max_normalize(attn_val_q)
 
     # save ISM of layer neurons to modality tokens
-    for ind, metric_type in enumerate(args.all_importance_metric_types):
+    for ind, metric_type in enumerate(cfg["ALL_IMPORTANCE_METRIC_TYPES"]):
         args.ISM_of_one_sample[ind, index, layer_index] = importance_dict[metric_type]
 
 def find_topK_values(data_dict, ret, K, return_flag=False): # no overlap
@@ -366,7 +370,7 @@ def create_activation_hook(layer_index, args):
                         args.input_modality_masks[modality] = torch.cat((mask[:, :start_ind], zero_value, mask[:, start_ind:]), dim=1)
                 args.prompt_mask_shape = args.input_modality_masks['audio'].shape
                 
-            for index, modality in enumerate(args.all_modalities):
+            for index, modality in enumerate(cfg["ALL_MODALITIES"]):
                 save_ISM_with_token_mask_in_one_layer(output, (index, modality, layer_index), args)
         
         elif args.mode == 3:

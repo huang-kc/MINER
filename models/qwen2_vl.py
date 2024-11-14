@@ -3,9 +3,13 @@ import torch
 import os
 import pickle
 import numpy as np
+import yaml
 from qwen_vl_utils import process_vision_info
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from utils.func import create_activation_hook, create_attention_hook
+
+with open('config.yaml', 'r') as f:
+    cfg = yaml.safe_load(f)
 
 class Qwen2_VL:
     """
@@ -49,8 +53,10 @@ class Qwen2_VL:
         inference on the given information
         """
         self.args.ISM_of_one_sample = torch.zeros(
-            len(self.args.all_importance_metric_types), # T
-            len(self.args.all_modalities),              # M
+            len(cfg["ALL_IMPORTANCE_METRIC_TYPES"]),# T
+            len(cfg["ALL_MODALITIES"]),# M
+            # len(self.args.all_importance_metric_types), # T
+            # len(self.args.all_modalities),              # M
             self.args.layer_num,                        # L
             self.args.hidden_size,                      # N 
         ).to(self.args.device)
@@ -116,7 +122,8 @@ class Qwen2_VL:
             if not os.path.exists(self.args.mllm_dataset_ISM_path):
                 os.makedirs(self.args.mllm_dataset_ISM_path)
 
-            ISM_file_path = f"{self.args.mllm_dataset_ISM_path}/ISM_{self.args.sample_str}.npy"
+            # ISM_file_path = f"{self.args.mllm_dataset_ISM_path}/ISM_{self.args.sample_str}.npy"
+            ISM_file_path = f"{self.args.mllm_dataset_ISM_path}/ISM.npy"
             if not os.path.exists(ISM_file_path):
                 with open(ISM_file_path, "wb") as f:
                     pickle.dump((1, self.args.ISM_of_one_sample), f)
@@ -127,8 +134,9 @@ class Qwen2_VL:
                 current_ISM += self.args.ISM_of_one_sample
                 with open(ISM_file_path, "wb") as f:
                     pickle.dump((sample_num, current_ISM), f)
-                if sample_num in self.args.all_save_sample_nums:
-                    with open(f'{self.args.mllm_dataset_ISM_path}/ISM_{self.args.sample_str}_{sample_num}.npy', "wb") as f:
+                if sample_num in cfg["ALL_SAVE_SAMPLE_NUMS"]:
+                    # with open(f'{self.args.mllm_dataset_ISM_path}/ISM_{self.args.sample_str}_{sample_num}.npy', "wb") as f:
+                    with open(f'{self.args.mllm_dataset_ISM_path}/ISM_{sample_num}.npy', "wb") as f:
                         pickle.dump((sample_num, current_ISM), f)
 
         return output_text[0]
