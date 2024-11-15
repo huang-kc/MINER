@@ -14,7 +14,7 @@ def count_layer_num(input_list):
     num_result = {key: len(result[key]) for key in result.keys()}
     return result, num_result
 
-output_path = Path('/data/kaichen/radar_onellm/modality_specific/outputs/')
+output_path = Path('/data/kaichen/MINER/outputs/')
 # output_path = Path('/data/kaichen/radar_onellm/modality_specific/demo_outputs')
 
 def get_outputs(file_str=None):
@@ -88,8 +88,8 @@ def check_masks(file_str=None):
     # "special_text_as_one": {2: "special_text", 3: "image", 4: "video", 5: "audio"},
     # "special_text_separate"
 
-get_outputs(["/coco_caption/"])
-# get_outputs()
+# get_outputs(["/coco_caption/"])
+get_outputs()
 
 
 

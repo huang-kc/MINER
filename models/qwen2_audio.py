@@ -1,10 +1,10 @@
 """class definition for Qwen2-VL"""
-import torch
 import os
 import pickle
-from utils.func import create_activation_hook, create_attention_hook
+import torch
 import librosa
 import yaml
+from utils.func import create_activation_hook, create_attention_hook
 from transformers import Qwen2AudioForConditionalGeneration, AutoProcessor
 
 with open('config.yaml', 'r') as f:
@@ -38,10 +38,8 @@ class Qwen2_Audio:
         inference on the given information
         """
         self.args.ISM_of_one_sample = torch.zeros(
-            len(cfg["ALL_IMPORTANCE_METRIC_TYPES"]),# T
-            len(cfg["ALL_MODALITIES"]),# M
-            # len(self.args.all_importance_metric_types), # T
-            # len(self.args.all_modalities),              # M
+            len(cfg["ALL_IMPORTANCE_METRIC_TYPES"]),    # T
+            len(cfg["ALL_MODALITIES"]),                 # M
             self.args.layer_num,                        # L
             self.args.hidden_size,                      # N 
         ).to(self.args.device)
@@ -108,7 +106,7 @@ class Qwen2_Audio:
 
         response = self.processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         
-        if self.args.mode == 1:
+        if self.args.save_ISM:
             if not os.path.exists(self.args.mllm_dataset_ISM_path):
                 os.makedirs(self.args.mllm_dataset_ISM_path)
 

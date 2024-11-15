@@ -488,8 +488,10 @@ class Test(Dataset):
         return self.datas[index], None
 
 class DatasetProcessor:
-    def __init__(self, args):        
-        # create mllm model
+    def __init__(self, args, save_ISM=False, apply_mask=False):        
+        args.save_ISM = save_ISM # used in qwen2_vl/audio.py
+        args.apply_mask = apply_mask # used in activation_hook
+        
         if args.mllm == 'qwen2_vl':
             model = Qwen2_VL(args)
         elif args.mllm == 'qwen2_audio':

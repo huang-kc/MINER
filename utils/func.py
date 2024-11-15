@@ -2,15 +2,19 @@
 import random
 import os
 import csv
-import torch
+import re
 import sys
+import pickle
+import itertools
 import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import torch.nn.functional as F
 from itertools import combinations
+from pathlib import Path
+import torch
+import torch.nn.functional as F
 
 with open('config.yaml', 'r') as f:
     cfg = yaml.safe_load(f)
@@ -202,8 +206,8 @@ def create_activation_hook(layer_index, args):
     hook for activation of mlp neurons in llm
     """
     def activation_hook(module, input, output):
-        if args.mode == 1 and (output.shape[:-1] == args.prompt_mask_shape or output.shape[-2] > 1):
-            
+        # compute and save ISM
+        if args.save_ISM and (output.shape[:-1] == args.prompt_mask_shape or output.shape[-2] > 1):
             if args.dataset in ['libri', 'vocal_sound'] and output.shape[:-1] != args.prompt_mask_shape:
                 # if data has audio modality, need to update all masks first
                 _, num_tokens = args.prompt_mask_shape
@@ -224,7 +228,8 @@ def create_activation_hook(layer_index, args):
             for index, modality in enumerate(cfg["ALL_MODALITIES"]):
                 save_ISM_with_token_mask_in_one_layer(output, (index, modality, layer_index), args)
         
-        elif args.mode == 3:
+        # apply the generated mask
+        if args.apply_mask:
             if args.mask_modalities[0] == "all_modalities":
                 wanna_mask_modalities = list(args.modality_specific_neurons.keys())
             else:
@@ -272,10 +277,7 @@ def create_attention_hook(layer_index, args):
         return output
     return attn_hook
 
-def initialize_csv(csv_name, args):
-    """
-    initialize csv file
-    """
+def initialize_csv(args):
     args.csv_fieldnames = ["index", "dataset name", "sub-index", "text", "img", "video", "audio", "answer", "label"]
     args.csv_file = open(args.csv_path, mode='a+', newline='', encoding='utf-8')
     def initialize_csv_writer(args, add_lst):
@@ -291,27 +293,90 @@ def initialize_csv(csv_name, args):
         initialize_csv_writer(args, ["bleu", "sbert_similarity", "cider"])
     elif args.dataset == "libri":
         initialize_csv_writer(args, ["wrr"])
-
-def handle_output(args, csv_line):
+    
+def generate_mask_of_modality_specific_neurons(
+    args,
+    sum_ISM_file_name=None,
+    modality_split_type=None,
+    select_ratio=None,
+    importance_metric_weights=None,
+    select_strategy=None,
+):
     """
-    decide whether to print or write in csv
+    All parameters are optional. If none are specified, all possible values will be iterated.
+    input: (
+        sum_ISM_file_name: text_vqa5000_coco_caption5000_mmlu14042,
+        modality_split_type,
+        select_ratio,
+        importance_metric_weights (list of length 5),
+        select_strategy,
+    )
+    output: (
+        sum_ISM_path/masks.npy is updated,
+        last modality_specific_neuron_mask is saved in args.modality_specific_neuron_mask
+    )
     """
-    if args.mode != 0:
-        args.writer.writerow(csv_line)
-        args.csv_file.flush()
-    else:
-        for key, value in csv_line.items():
-            print(f'{key}: {value}')
-        print("")
+    all_sum_ISM_paths = []
+    for subfolder in Path(args.sum_ISM_path).rglob('*'):
+        if subfolder.is_dir() and re.search(r'(' + '|'.join(cfg["ALL_DATASETS"]) + r')\d+', str(subfolder)):
+            if sum_ISM_file_name is not None and subfolder.name != sum_ISM_file_name:
+                continue
+            all_sum_ISM_paths.append(subfolder.name)
+    
+    for temp_sum_ISM_path in all_sum_ISM_paths:
+        sum_ISM_path = f"{args.sum_ISM_path}/{temp_sum_ISM_path}"
+        masks_path = f"{sum_ISM_path}/masks.npy"
+        if os.path.exists(masks_path): # update incrementally
+            try:
+                with open(masks_path, "rb") as f:
+                    mask_dict = pickle.load(f)
+            except Exception as e:
+                print(e)
+                print(masks_path)
+                sys.exit()
+        else:
+            mask_dict = {}
         
-def check_values_in_lists(values, lists):
-    violations = []
+        # iterate all possible combination of parameters
+        cartesian_product = list(itertools.product(
+            list(cfg["ALL_MODILITY_SPLIT_TYPES"].keys()),
+            cfg["ALL_SELECT_RATIO"],
+            cfg["ALL_IMPORTANCE_METRIC_WEIGHTS"],
+            cfg["ALL_SELECT_STRATEGIES"],
+        ))
+        for item in cartesian_product:
+            if (modality_split_type is not None and item[0] != modality_split_type) or \
+                (select_ratio is not None and item[1] != select_ratio) or \
+                (importance_metric_weights is not None and item[2] != importance_metric_weights) or \
+                (select_strategy is not None and item[3] != select_strategy):
+                continue
+            # These parameters can uniquely determine a mask.
+            mask_index = (item[0], item[1], "_".join(map(str, item[2])), item[3])
+            
+            if mask_dict.get(mask_index) is not None:
+                args.modality_specific_neurons = mask_dict.get(mask_index)[0]
+                print(f"mask of {temp_sum_ISM_path}, {mask_index} already exists!")
+                continue
+
+            with open(f"{sum_ISM_path}/{item[0]}.npy", "rb") as f:
+                ISM_temp = pickle.load(f)
+            ret = select_modality_neurons_from_importance_scores(ISM_temp, mask_index)
+            mask_dict[mask_index] = ret # (mask, df)
+            args.modality_specific_neurons = ret[0]
+            print(f"successfully save mask of {temp_sum_ISM_path}, {mask_index}!")
     
-    for i, (value, lst) in enumerate(zip(values, lists)):
-        if value not in lst:
-            violations.append(f"Value {value} at index {i} not in list {lst}")
-    
-    if not violations:
-        return True
-    else:
-        return violations
+        with open(masks_path, "wb") as f:
+            pickle.dump(mask_dict, f)
+
+    if not hasattr(args, 'modality_specific_neurons'):
+        print("Oops! something wrong, fail to generate mask!")
+        inputs = [modality_split_type, importance_metric_weights, select_ratio, select_strategy]
+        choices = [list(cfg["ALL_MODILITY_SPLIT_TYPES"].keys()), cfg["ALL_IMPORTANCE_METRIC_WEIGHTS"], cfg["ALL_SELECT_RATIO"], cfg["ALL_SELECT_STRATEGIES"]]
+
+        # check if inputs in choices
+        violations = []
+        for i, (value, lst) in enumerate(zip(inputs, choices)):
+            if value not in lst:
+                violations.append(f"Value {value} at index {i} not in list {lst}")
+        print(violations)
+        sys.exit(0)
